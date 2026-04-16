@@ -3,37 +3,43 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OlxMonitor.Infrastructure.Data;
 using Serilog;
+using OlxMonitor.Infrastructure.Services;
 
 namespace OlxMonitor.Worker;
 
 public class Program
 {
-    public static void Main(string[] args)
+    public static async Task Main(string[] args)
     {
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Information()
             .WriteTo.Console()
             .CreateLogger();
 
-        IHost host = Host.CreateDefaultBuilder(args)
+        var host = Host.CreateDefaultBuilder(args)
             .UseSerilog()
-            .ConfigureServices((hostContext, services) =>
+            .ConfigureServices((context, services) =>
             {
-                // SQLite with persistent file (Docker volume will mount here)
+                // SQLite with persistent file (Docker volume will mount /app/data)
                 services.AddDbContext<OlxMonitorDbContext>(options =>
-                    options.UseSqlite("Data Source=/app/data/olxmonitor.db"));
+                    options.UseSqlite("Data Source=/app/data/olxmonitor.db;Cache=Shared"));
 
-                // TODO: Add scraper and background service here later
+                // Register services (we'll add Scraper + Worker next)
+                services.AddHttpClient();
+                services.AddSingleton<OlxScraper>();           // we'll create this next
+                services.AddHostedService<MonitorBackgroundService>();
             })
             .Build();
 
-        // Ensure DB and migrations on startup
+        // Apply migrations
         using (var scope = host.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<OlxMonitorDbContext>();
-            db.Database.Migrate();
+            await db.Database.MigrateAsync();
+            Log.Information("Database ready");
         }
 
-        host.Run();
+        Log.Information("🚀 OLX Monitor starting...");
+        await host.RunAsync();
     }
 }
