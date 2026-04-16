@@ -50,30 +50,34 @@ public class MonitorBackgroundService : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<OlxMonitorDbContext>();
         var settings = scope.ServiceProvider.GetRequiredService<IOptions<MonitorSettings>>().Value;
 
-        _logger.LogInformation("🔍 Starting scrape cycle with {Count} searches...", settings.Searches.Count);
+        _logger.LogInformation("🔍 Starting scrape cycle with {Count} configured searches...", settings.Searches.Count);
 
         int added = 0;
         int updated = 0;
+        int skipped = 0;
 
         foreach (var search in settings.Searches)
         {
-            _logger.LogInformation("Scraping for keyword: {Keyword}", search.Keyword);
+            _logger.LogInformation("Scraping for: {Keyword}", search.Keyword);
 
             var listings = await _scraper.ScrapeAsync(
-                search.CategoryPath,
-                search.Keyword,
+                search.CategoryPath, 
+                search.Keyword, 
                 maxPages: settings.MaxPages
             );
 
             foreach (var listing in listings)
             {
-                if (string.IsNullOrWhiteSpace(listing.OlxId))
+                if (string.IsNullOrWhiteSpace(listing.OlxId) || string.IsNullOrWhiteSpace(listing.Url))
+                {
+                    skipped++;
                     continue;
+                }
 
                 try
                 {
                     var existing = await db.Listings
-                        .FirstOrDefaultAsync(l => l.OlxId == listing.OlxId, stoppingToken);
+                        .FirstOrDefaultAsync(l => l.OlxId == listing.OlxId || l.Url == listing.Url, stoppingToken);
 
                     if (existing == null)
                     {
@@ -85,19 +89,26 @@ public class MonitorBackgroundService : BackgroundService
                     else
                     {
                         existing.LastSeen = DateTime.UtcNow;
+                        if (existing.Title != listing.Title || existing.Price != listing.Price)
+                        {
+                            existing.Title = listing.Title;
+                            existing.Price = listing.Price;
+                            existing.Location = listing.Location;
+                        }
                         updated++;
                     }
                 }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to process listing {OlxId}", listing.OlxId);
+                    skipped++;
                 }
             }
         }
 
         await db.SaveChangesAsync(stoppingToken);
 
-        _logger.LogInformation("✅ Cycle completed. Added: {Added} | Updated: {Updated} | Total in DB: {Total}", 
-            added, updated, await db.Listings.CountAsync(stoppingToken));
+        _logger.LogInformation("✅ Cycle completed. Added: {Added} | Updated: {Updated} | Skipped: {Skipped} | Total in DB: {Total}", 
+            added, updated, skipped, await db.Listings.CountAsync(stoppingToken));
     }
 }
