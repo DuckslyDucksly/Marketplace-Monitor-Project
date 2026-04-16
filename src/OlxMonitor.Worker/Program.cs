@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using System.IO;
 using OlxMonitor.Infrastructure.Data;
 using Serilog;
 using OlxMonitor.Infrastructure.Services;
@@ -20,23 +21,28 @@ public class Program
             .UseSerilog()
             .ConfigureServices((context, services) =>
             {
-                // SQLite with persistent file (Docker volume will mount /app/data)
-                services.AddDbContext<OlxMonitorDbContext>(options =>
-                    options.UseSqlite("Data Source=/app/data/olxmonitor.db;Cache=Shared"));
+                // Better path: puts the database next to the project (not deep in bin/Debug)
+                var dbFolder = Path.Combine(Directory.GetCurrentDirectory(), "Data");
+                Directory.CreateDirectory(dbFolder);
+                var dbPath = Path.Combine(dbFolder, "olxmonitor.db");
 
-                // Register services (we'll add Scraper + Worker next)
+                services.AddDbContext<OlxMonitorDbContext>(options =>
+                    options.UseSqlite($"Data Source={dbPath};Cache=Shared"));
+
                 services.AddHttpClient();
-                services.AddSingleton<OlxScraper>();           // we'll create this next
+                services.AddSingleton<OlxScraper>();
                 services.AddHostedService<MonitorBackgroundService>();
+
+                Log.Information("Using database: {DbPath}", dbPath);
             })
             .Build();
 
-        // Apply migrations
+        // Apply migrations on startup
         using (var scope = host.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<OlxMonitorDbContext>();
             await db.Database.MigrateAsync();
-            Log.Information("Database ready");
+            Log.Information("✅ Database ready");
         }
 
         Log.Information("🚀 OLX Monitor starting...");

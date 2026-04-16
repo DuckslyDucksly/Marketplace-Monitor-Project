@@ -22,84 +22,129 @@ public class OlxScraper
         _httpClient.DefaultRequestHeaders.Add("Accept-Language", "pl-PL,pl;q=0.9");
     }
 
-    public async Task<List<Listing>> ScrapeAsync(string categoryPath, string keyword, int maxPages = 2)
+public async Task<List<Listing>> ScrapeAsync(string categoryPath, string keyword, int maxPages = 2)
+{
+    var listings = new List<Listing>();
+    var safeKeyword = keyword.Replace(" ", "-").ToLowerInvariant();
+    var baseUrl = $"https://www.olx.pl{categoryPath}q-{safeKeyword}/";
+
+    _logger.LogInformation("Scraping: {Url}", baseUrl);
+
+    for (int page = 1; page <= maxPages; page++)
     {
-        var listings = new List<Listing>();
-        var baseUrl = $"https://www.olx.pl{categoryPath}q-{keyword.Replace(" ", "-")}/";
+        var url = page == 1 ? baseUrl : $"{baseUrl}?page={page}";
 
-        _logger.LogInformation("Scraping OLX: {Url}", baseUrl);
-
-        for (int page = 1; page <= maxPages; page++)
+        try
         {
-            var url = page == 1 ? baseUrl : $"{baseUrl}?page={page}";
+            var response = await _httpClient.GetAsync(url);
+            response.EnsureSuccessStatusCode();
+            var html = await response.Content.ReadAsStringAsync();
 
-            try
+            var doc = new HtmlDocument();
+            doc.LoadHtml(html);
+
+            // Updated 2026 selector for OLX listing cards (data-cy is more stable)
+            var adNodes = doc.DocumentNode.SelectNodes("//div[contains(@data-cy, 'l-card')]") 
+                         ?? doc.DocumentNode.SelectNodes("//article[contains(@class, 'css-')]");
+
+            if (adNodes == null || adNodes.Count == 0)
             {
-                var html = await _httpClient.GetStringAsync(url);
-                var doc = new HtmlDocument();
-                doc.LoadHtml(html);
-
-                var adNodes = doc.DocumentNode.SelectNodes("//div[contains(@class, 'css-1sw7q1x')]"); // OLX ad container class (may need update)
-
-                if (adNodes == null) break;
-
-                foreach (var node in adNodes)
-                {
-                    try
-                    {
-                        var listing = ParseListing(node);
-                        if (listing != null)
-                            listings.Add(listing);
-                    }
-                    catch { /* skip broken ads */ }
-                }
-
-                // Be polite - random delay between pages
-                await Task.Delay(_random.Next(4000, 8000));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to scrape page {Page}", page);
+                _logger.LogWarning("No listing cards found on page {Page}. OLX may have changed structure.", page);
                 break;
             }
-        }
 
-        return listings;
+            foreach (var node in adNodes)
+            {
+                var listing = ParseListing(node);
+                if (listing != null)
+                    listings.Add(listing);
+            }
+
+            await Task.Delay(_random.Next(6000, 14000)); // polite delay
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load page {Page}", page);
+            break;
+        }
     }
 
+    _logger.LogInformation("Scraped {Count} potential listings from {Pages} pages", listings.Count, maxPages);
+    return listings;
+}
+
     private Listing? ParseListing(HtmlNode node)
+{
+    try
     {
-        // This selector will likely need small tuning — OLX changes class names often
-        var titleNode = node.SelectSingleNode(".//h6") ?? node.SelectSingleNode(".//a");
-        var priceNode = node.SelectSingleNode(".//p[contains(@class, 'css-1q1v8m5')]");
-        var locationNode = node.SelectSingleNode(".//p[contains(@class, 'css-1e3p1d')]");
-        var linkNode = node.SelectSingleNode(".//a");
+        // Much stronger title extraction for current OLX.pl (2026)
+        var titleNode = node.SelectSingleNode(".//h6") 
+                      ?? node.SelectSingleNode(".//h4") 
+                      ?? node.SelectSingleNode(".//a[contains(@class, 'css-') and not(contains(@class, 'price'))]") 
+                      ?? node.SelectSingleNode(".//div[contains(@class, 'title')]//h6")
+                      ?? node.SelectSingleNode(".//span[string-length(text()) > 15]");
 
-        if (titleNode == null || linkNode == null) return null;
+        var priceNode = node.SelectSingleNode(".//p[contains(text(),'zł')]") 
+                      ?? node.SelectSingleNode(".//span[contains(text(),'zł')]") 
+                      ?? node.SelectSingleNode(".//div[contains(text(),'zł')]");
 
-        var url = linkNode.GetAttributeValue("href", "");
-        if (!url.StartsWith("http")) url = "https://www.olx.pl" + url;
+        var locationNode = node.SelectSingleNode(".//p[contains(@data-testid,'location')]") 
+                        ?? node.SelectSingleNode(".//span[contains(@class,'location')]");
 
-        var olxId = url.Split('/').LastOrDefault()?.Split('-').LastOrDefault() ?? "";
+        var linkNode = node.SelectSingleNode(".//a[contains(@href,'/oferta/')]");
+
+        if (linkNode == null) return null;
+
+        var relativeUrl = linkNode.GetAttributeValue("href", "");
+        var fullUrl = relativeUrl.StartsWith("http") ? relativeUrl : "https://www.olx.pl" + relativeUrl;
+
+        var olxId = fullUrl.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
+
+        var rawTitle = titleNode?.InnerText?.Trim() ?? "";
+
+        // Clean common junk from title
+        var title = rawTitle
+            .Replace("Dostawa gratis", "")
+            .Replace("Odświeżono", "")
+            .Trim();
 
         return new Listing
         {
             OlxId = olxId,
-            Title = titleNode.InnerText.Trim(),
+            Title = string.IsNullOrWhiteSpace(title) ? "Untitled Listing" : title,
             Price = ParsePrice(priceNode?.InnerText),
-            Location = locationNode?.InnerText.Trim() ?? "",
-            Url = url,
-            PostedDate = DateTime.UtcNow,           // OLX doesn't always show exact date
+            Location = locationNode?.InnerText?.Trim() ?? "Nieznana lokalizacja",
+            Url = fullUrl,
+            PostedDate = DateTime.UtcNow,
             FirstSeen = DateTime.UtcNow,
             LastSeen = DateTime.UtcNow
         };
     }
+    catch
+    {
+        return null;
+    }
+}
+    
 
     private decimal ParsePrice(string? priceText)
     {
-        if (string.IsNullOrEmpty(priceText)) return 0;
-        var clean = priceText.Replace("zł", "").Replace(" ", "").Replace(",", ".");
-        return decimal.TryParse(clean, out var price) ? price : 0;
+        if (string.IsNullOrWhiteSpace(priceText)) return 0m;
+
+        var clean = priceText
+            .Replace("zł", "")
+            .Replace(" ", "")
+            .Replace(",", ".")
+            .Replace("do negocjacji", "")
+            .Replace("netto", "")
+            .Replace("brutto", "")
+            .Replace("Za darmo", "0")
+            .Trim();
+
+        // Remove any remaining non-numeric characters except .
+        clean = System.Text.RegularExpressions.Regex.Replace(clean, @"[^\d.]", "");
+
+        return decimal.TryParse(clean, out var price) ? price : 0m;
     }
 
     private string GetRandomUserAgent()
