@@ -10,7 +10,7 @@ A simple .NET 8 background worker that scrapes OLX.pl for new listings based on 
 
 ## Quick Start
 
-### 1. Add a search
+1. Add a search
 ```powershell
 cd src\OlxMonitor.Worker
 dotnet run -- add-url https://www.olx.pl/elektronika/komputery/podzespoly-i-czesci/q-ddr4-ram/ (example)
