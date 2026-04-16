@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OlxMonitor.Core/OlxMonitor.Core.csproj" />
+    <Project Path="src/OlxMonitor.Infrastructure/OlxMonitor.Infrastructure.csproj" />
+    <Project Path="src/OlxMonitor.Worker/OlxMonitor.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OlxMonitor.Tests/OlxMonitor.Tests.csproj" />
+  </Folder>
+</Solution>
