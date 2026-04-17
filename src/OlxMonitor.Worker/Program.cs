@@ -3,16 +3,19 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Newtonsoft.Json;
 using OlxMonitor.Core.Models;
 using OlxMonitor.Infrastructure.Data;
 using OlxMonitor.Infrastructure.Services;
 using Serilog;
-using Spectre.Console;
+using System.Text.RegularExpressions;
 
 namespace OlxMonitor.Worker;
 
 public class Program
 {
+    private static readonly string AppSettingsPath = "appsettings.json";
+
     public static async Task Main(string[] args)
     {
         Log.Logger = new LoggerConfiguration()
@@ -20,10 +23,15 @@ public class Program
             .WriteTo.Console()
             .CreateLogger();
 
-        // Viewer command: dotnet run -- viewer
-        if (args.Length > 0 && args[0].Equals("viewer", StringComparison.OrdinalIgnoreCase))
+        if (args.Length > 0 && args[0].Equals("add-url", StringComparison.OrdinalIgnoreCase))
         {
-            await RunViewerAsync();
+            if (args.Length < 2)
+            {
+                Console.WriteLine("Usage: dotnet run -- add-url <full-olx-url>");
+                return;
+            }
+
+            AddUrl(args[1]);
             return;
         }
 
@@ -39,6 +47,7 @@ public class Program
                 services.AddDbContext<OlxMonitorDbContext>(options =>
                     options.UseSqlite($"Data Source={dbPath};Cache=Shared"));
 
+                // ←←← ADD THIS LINE HERE
                 services.Configure<MonitorSettings>(context.Configuration.GetSection("MonitorSettings"));
 
                 services.AddHttpClient();
@@ -60,64 +69,39 @@ public class Program
         await host.RunAsync();
     }
 
-    private static async Task RunViewerAsync()
+    private static void AddUrl(string url)
     {
-        var dbPath = Path.Combine(Directory.GetCurrentDirectory(), "Data", "olxmonitor.db");
-
-        if (!File.Exists(dbPath))
+        try
         {
-            AnsiConsole.MarkupLine("[red]❌ Database not found:[/] {0}", dbPath);
-            return;
+            var match = Regex.Match(url, @"olx\.pl(.*?)/q-([^/]+)");
+            if (!match.Success)
+            {
+                Console.WriteLine("Invalid OLX URL. Example: https://www.olx.pl/elektronika/.../q-ddr4-ram/");
+                return;
+            }
+
+            string categoryPath = match.Groups[1].Value + "/";
+            string keyword = match.Groups[2].Value.Replace("-", " ");
+
+            // Load existing config or create new
+            var config = new
+            {
+                MonitorSettings = new
+                {
+                    Searches = new[]
+                    {
+                        new { CategoryPath = categoryPath, Keyword = keyword }
+                    }
+                }
+            };
+
+            File.WriteAllText(AppSettingsPath, JsonConvert.SerializeObject(config, Formatting.Indented));
+
+            Console.WriteLine($"✅ Successfully added new search → Category: {categoryPath} | Keyword: {keyword}");
         }
-
-        await using var db = new OlxMonitorDbContext(
-            new DbContextOptionsBuilder<OlxMonitorDbContext>()
-                .UseSqlite($"Data Source={dbPath};Cache=Shared")
-                .Options);
-
-        var listings = await db.Listings
-            .OrderByDescending(l => l.FirstSeen)
-            .Take(30)                    // top 30 newest
-            .ToListAsync();
-
-        if (listings.Count == 0)
+        catch (Exception ex)
         {
-            AnsiConsole.MarkupLine("[yellow]No listings found yet.[/]");
-            return;
+            Console.WriteLine($"Failed to add URL: {ex.Message}");
         }
-
-        var table = new Table()
-            .Border(TableBorder.Rounded)
-            .Title("[green]OLX Monitor - Saved Listings[/]")
-            .AddColumn(new TableColumn("[bold]ID[/]").RightAligned().Width(4))
-            .AddColumn(new TableColumn("[bold]Title[/]").Width(55))
-            .AddColumn(new TableColumn("[bold]Price[/]").RightAligned().Width(12))
-            .AddColumn(new TableColumn("[bold]Location[/]").Width(25))
-            .AddColumn(new TableColumn("[bold]First Seen[/]").Width(18))
-            .AddColumn(new TableColumn("[bold]Last Seen[/]").Width(18))
-            .AddColumn(new TableColumn("[bold]Url[/]").Width(85));   // wide for full links
-
-        foreach (var l in listings)
-        {
-            var title = l.Title?.Length > 52 ? l.Title.Substring(0, 49) + "..." : l.Title ?? "N/A";
-            var location = string.IsNullOrWhiteSpace(l.Location) ? "N/A" : 
-                          (l.Location.Length > 22 ? l.Location.Substring(0, 19) + "..." : l.Location);
-
-            var urlDisplay = l.Url?.Length > 82 ? l.Url.Substring(0, 79) + "..." : l.Url ?? "N/A";
-
-            table.AddRow(
-                l.Id.ToString(),
-                title,
-                $"[cyan]{l.Price:0.00} zł[/]",
-                location,
-                l.FirstSeen.ToString("yyyy-MM-dd HH:mm"),
-                l.LastSeen.ToString("yyyy-MM-dd HH:mm"),
-                $"[blue underline]{urlDisplay}[/]"
-            );
-        }
-
-        AnsiConsole.Write(table);
-        AnsiConsole.MarkupLine($"\n[green]Showing {listings.Count} newest listings.[/]");
-        AnsiConsole.MarkupLine("[gray]Tip: Copy the URL directly from the table. Run with -- viewer to refresh.[/]");
     }
 }

@@ -14,20 +14,16 @@ A simple .NET 8 background worker that scrapes OLX.pl for new listings based on 
 ```
 1. Add a search
 Powershell
-cd src\OlxMonitor.Worker
-dotnet run -- add-url https://www.olx.pl/elektronika/komputery/podzespoly-i-czesci/q-ddr4-ram/ (example)
+dotnet run --project src/OlxMonitor.Worker -- add-url https://www.olx.pl/elektronika/gry-konsole/q-xbox-360/ (example)
 2. Run the monitor
 PowerShell
-cd src\OlxMonitor.Worker
-dotnet run
+dotnet run --project src/OlxMonitor.Worker 
 3. View your saved listings (console)
 PowerShell
-cd src\OlxMonitor.Worker
-dotnet run -- viewer
-
+dotnet run --project src/OlxMonitor.Worker -- viewer
 3.1 View your saved listings (GUI)
 PowerShell
-dotnet run -p src/OlxMonitor.Viewer/OlxMonitor.Viewer.csproj
+dotnet run --project src/OlxMonitor.Viewer   
 4. Build everything
 PowerShell
 dotnet build Marketplace-Monitor.slnx
