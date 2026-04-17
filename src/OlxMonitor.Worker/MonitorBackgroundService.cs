@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using OlxMonitor.Core.Models;
 using OlxMonitor.Infrastructure.Data;
 using OlxMonitor.Infrastructure.Services;
@@ -47,18 +48,12 @@ public class MonitorBackgroundService : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OlxMonitorDbContext>();
+        var settings = scope.ServiceProvider.GetRequiredService<IOptions<MonitorSettings>>().Value;
 
-        _logger.LogInformation("🔍 Starting scrape cycle...");
+        _logger.LogInformation("🔍 Starting scrape cycle with {SearchCount} configured searches...", 
+            settings.Searches.Count);
 
-        // Simple hardcoded searches for now (easy to extend later)
-        var searches = new[]
-        {
-            new { CategoryPath = "/elektronika/komputery/podzespoly-i-czesci/", Keyword = "ddr4 ram" }
-            // Add more searches here if you want:
-            // new { CategoryPath = "/elektronika/telefony/smartfony-telefony-komorkowe/", Keyword = "pixel 10" }
-        };
-
-        foreach (var search in searches)
+        foreach (var search in settings.Searches)
         {
             try
             {
@@ -81,7 +76,7 @@ public class MonitorBackgroundService : BackgroundService
 
                     try
                     {
-                        // Check BOTH OlxId and Url to prevent UNIQUE constraint errors
+                        // Stronger duplicate check
                         var existing = await db.Listings
                             .FirstOrDefaultAsync(l => l.OlxId == listing.OlxId || l.Url == listing.Url, stoppingToken);
 
@@ -94,23 +89,20 @@ public class MonitorBackgroundService : BackgroundService
                         }
                         else
                         {
-                            // Update last seen time and any changed fields
+                            // Always update LastSeen
                             existing.LastSeen = DateTime.UtcNow;
 
-                            if (existing.Title != listing.Title || 
-                                existing.Price != listing.Price || 
-                                existing.Location != listing.Location)
-                            {
-                                existing.Title = listing.Title;
-                                existing.Price = listing.Price;
-                                existing.Location = listing.Location;
-                            }
+                            // Update other fields if changed
+                            if (existing.Title != listing.Title) existing.Title = listing.Title;
+                            if (existing.Price != listing.Price) existing.Price = listing.Price;
+                            if (existing.Location != listing.Location) existing.Location = listing.Location;
+
                             updated++;
                         }
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Failed to process listing {OlxId}", listing.OlxId);
+                        _logger.LogWarning(ex, "Failed to process listing {OlxId} / {Url}", listing.OlxId, listing.Url);
                         skipped++;
                     }
                 }
