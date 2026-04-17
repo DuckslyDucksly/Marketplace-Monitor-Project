@@ -1,4 +1,4 @@
-namespace OlxMonitor.Tests;
+﻿namespace OlxMonitor.Tests;
 
 public class UnitTest1
 {

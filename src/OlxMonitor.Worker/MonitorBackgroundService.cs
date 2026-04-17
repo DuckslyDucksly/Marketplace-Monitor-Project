@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using OlxMonitor.Core.Models;
 using OlxMonitor.Infrastructure.Data;
 using OlxMonitor.Infrastructure.Services;
@@ -48,67 +47,83 @@ public class MonitorBackgroundService : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OlxMonitorDbContext>();
-        var settings = scope.ServiceProvider.GetRequiredService<IOptions<MonitorSettings>>().Value;
 
-        _logger.LogInformation("🔍 Starting scrape cycle with {Count} configured searches...", settings.Searches.Count);
+        _logger.LogInformation("🔍 Starting scrape cycle...");
 
-        int added = 0;
-        int updated = 0;
-        int skipped = 0;
-
-        foreach (var search in settings.Searches)
+        // Simple hardcoded searches for now (easy to extend later)
+        var searches = new[]
         {
-            _logger.LogInformation("Scraping for: {Keyword}", search.Keyword);
+            new { CategoryPath = "/elektronika/komputery/podzespoly-i-czesci/", Keyword = "ddr4 ram" }
+            // Add more searches here if you want:
+            // new { CategoryPath = "/elektronika/telefony/smartfony-telefony-komorkowe/", Keyword = "pixel 10" }
+        };
 
-            var listings = await _scraper.ScrapeAsync(
-                search.CategoryPath, 
-                search.Keyword, 
-                maxPages: settings.MaxPages
-            );
-
-            foreach (var listing in listings)
+        foreach (var search in searches)
+        {
+            try
             {
-                if (string.IsNullOrWhiteSpace(listing.OlxId) || string.IsNullOrWhiteSpace(listing.Url))
-                {
-                    skipped++;
-                    continue;
-                }
+                _logger.LogInformation("Scraping for: {Keyword}", search.Keyword);
 
-                try
-                {
-                    var existing = await db.Listings
-                        .FirstOrDefaultAsync(l => l.OlxId == listing.OlxId || l.Url == listing.Url, stoppingToken);
+                var listings = await _scraper.ScrapeAsync(
+                    search.CategoryPath, 
+                    search.Keyword, 
+                    maxPages: 2);
 
-                    if (existing == null)
+                int added = 0, updated = 0, skipped = 0;
+
+                foreach (var listing in listings)
+                {
+                    if (string.IsNullOrWhiteSpace(listing.OlxId) || string.IsNullOrWhiteSpace(listing.Url))
                     {
-                        db.Listings.Add(listing);
-                        added++;
-                        _logger.LogWarning("🆕 NEW: {Title} | {Price} zł | {Location}", 
-                            listing.Title, listing.Price, listing.Location);
+                        skipped++;
+                        continue;
                     }
-                    else
+
+                    try
                     {
-                        existing.LastSeen = DateTime.UtcNow;
-                        if (existing.Title != listing.Title || existing.Price != listing.Price)
+                        // Check BOTH OlxId and Url to prevent UNIQUE constraint errors
+                        var existing = await db.Listings
+                            .FirstOrDefaultAsync(l => l.OlxId == listing.OlxId || l.Url == listing.Url, stoppingToken);
+
+                        if (existing == null)
                         {
-                            existing.Title = listing.Title;
-                            existing.Price = listing.Price;
-                            existing.Location = listing.Location;
+                            db.Listings.Add(listing);
+                            added++;
+                            _logger.LogWarning("🆕 NEW: {Title} | {Price} zł | {Location}", 
+                                listing.Title, listing.Price, listing.Location);
                         }
-                        updated++;
+                        else
+                        {
+                            // Update last seen time and any changed fields
+                            existing.LastSeen = DateTime.UtcNow;
+
+                            if (existing.Title != listing.Title || 
+                                existing.Price != listing.Price || 
+                                existing.Location != listing.Location)
+                            {
+                                existing.Title = listing.Title;
+                                existing.Price = listing.Price;
+                                existing.Location = listing.Location;
+                            }
+                            updated++;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to process listing {OlxId}", listing.OlxId);
+                        skipped++;
                     }
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to process listing {OlxId}", listing.OlxId);
-                    skipped++;
-                }
+
+                await db.SaveChangesAsync(stoppingToken);
+
+                _logger.LogInformation("✅ Cycle completed. Added: {Added} | Updated: {Updated} | Skipped: {Skipped} | Total in DB: {Total}", 
+                    added, updated, skipped, await db.Listings.CountAsync(stoppingToken));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error scraping {Keyword}", search.Keyword);
             }
         }
-
-        await db.SaveChangesAsync(stoppingToken);
-
-        _logger.LogInformation("✅ Cycle completed. Added: {Added} | Updated: {Updated} | Skipped: {Skipped} | Total in DB: {Total}", 
-            added, updated, skipped, await db.Listings.CountAsync(stoppingToken));
     }
 }
