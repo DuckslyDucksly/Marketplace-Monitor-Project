@@ -27,7 +27,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            var dbPath = @"S:\Studia2\Projekt-Semestralny-1\Marketplace-Monitor-Project\src\OlxMonitor.Worker\Data\olxmonitor.db";
+            var dbPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "src", "OlxMonitor.Worker", "Data", "olxmonitor.db"));
 
             if (!File.Exists(dbPath))
             {
