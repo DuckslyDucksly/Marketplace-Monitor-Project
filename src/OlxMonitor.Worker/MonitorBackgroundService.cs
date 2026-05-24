@@ -66,6 +66,10 @@ public class MonitorBackgroundService : BackgroundService
 
                 int added = 0, updated = 0, skipped = 0;
 
+                // Track URLs/OlxIds seen in current batch to avoid duplicate inserts before SaveChanges
+                var seenOlxIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
                 foreach (var listing in listings)
                 {
                     if (string.IsNullOrWhiteSpace(listing.OlxId) || string.IsNullOrWhiteSpace(listing.Url))
@@ -76,19 +80,30 @@ public class MonitorBackgroundService : BackgroundService
 
                     try
                     {
-                        // Stronger duplicate check
+                        // Skip if duplicate within current batch
+                        if (seenOlxIds.Contains(listing.OlxId) || seenUrls.Contains(listing.Url))
+                        {
+                            skipped++;
+                            continue;
+                        }
+
+                        // Stronger duplicate check against DB
                         var existing = await db.Listings
                             .FirstOrDefaultAsync(l => l.OlxId == listing.OlxId || l.Url == listing.Url, stoppingToken);
 
                         if (existing == null)
                         {
                             db.Listings.Add(listing);
+                            seenOlxIds.Add(listing.OlxId);
+                            seenUrls.Add(listing.Url);
                             added++;
                             _logger.LogWarning("🆕 NEW: {Title} | {Price} zł | {Location}", 
                                 listing.Title, listing.Price, listing.Location);
                         }
                         else
                         {
+                            seenOlxIds.Add(listing.OlxId);
+                            seenUrls.Add(listing.Url);
                             // Always update LastSeen
                             existing.LastSeen = DateTime.UtcNow;
 
