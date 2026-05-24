@@ -1,54 +1,94 @@
 # OLX Monitor
 
-A simple .NET 8 background worker that scrapes OLX.pl for new listings based on your configured searches and saves them into SQLite.
+A .NET 8 background worker application that scrapes OLX.pl for new listings based on configured searches and stores them in a local SQLite database. Includes both console and WPF GUI viewers for browsing saved listings.
 
 ## Features
 
-- Configurable searches via `appsettings.json`
-- Easy way to add new searches: `dotnet run -- add-url <full-olx-url>`
-- Console viewer: `dotnet run -- viewer` (from Worker directory)
-- WPF GUI viewer: `dotnet run -p src/OlxMonitor.Viewer/OlxMonitor.Viewer.csproj` (from project root)
+- 🔍 **Configurable searches** via `appsettings.json`
+- ➕ **Easy search management**: `dotnet run -- add-url <full-olx-url>`
+- 🖥️ **Console viewer**: Browse listings from the terminal
+- 🪟 **WPF GUI viewer**: Desktop application with clickable listing URLs
+- 🗄️ **SQLite storage** for all scraped listings
+- 🧪 **Unit tests** for scraper and database operations
 
 ## Quick Start
 
+### Prerequisites
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) or later
+
+### 1. Add a Search
+```powershell
+dotnet run --project src/OlxMonitor.Worker -- add-url https://www.olx.pl/elektronika/gry-konsole/q-xbox-360/
 ```
-1. Add a search
-Powershell
-dotnet run --project src/OlxMonitor.Worker -- add-url https://www.olx.pl/elektronika/gry-konsole/q-xbox-360/ (example)
-2. Run the monitor
-PowerShell
-dotnet run --project src/OlxMonitor.Worker 
-3. View your saved listings (console)
-PowerShell
+
+### 2. Run the Monitor
+```powershell
+dotnet run --project src/OlxMonitor.Worker
+```
+
+### 3. View Saved Listings
+
+**Console Viewer:**
+```powershell
 dotnet run --project src/OlxMonitor.Worker -- viewer
-3.1 View your saved listings (GUI)
-PowerShell
-dotnet run --project src/OlxMonitor.Viewer   
-4. Build everything
-PowerShell
+```
+
+**GUI Viewer:**
+```powershell
+dotnet run --project src/OlxMonitor.Viewer
+```
+
+### 4. Build Solution
+```powershell
 dotnet build Marketplace-Monitor.slnx
+```
 
-Current Configuration
-Your appsettings.json currently monitors:
-DDR4 RAM (/elektronika/komputery/podzespoly-i-czesci/q-ddr4-ram/)
+## Configuration
 
-You can add more searches anytime using the add-url command.
+Searches are configured in `src/OlxMonitor.Worker/appsettings.json`:
 
-Project Structure:
-- OlxMonitor.Core → Models (Listing, MonitorSettings)
-- OlxMonitor.Infrastructure → Database + Scraper (HtmlAgilityPack)
-- OlxMonitor.Worker → Background service + Console viewer + CLI commands (add-url)
-- OlxMonitor.Viewer → WPF GUI viewer (listings with clickable URLs)
-- tests/OlxMonitor.Tests → Unit tests (scraper, DbContext)
+```json
+{
+  "MonitorSettings": {
+    "Searches": [
+      {
+        "CategoryPath": "/elektronika/gry-konsole/",
+        "Keyword": "xbox 360"
+      }
+    ]
+  }
+}
+```
 
-Database
-SQLite file: src\OlxMonitor.Worker\Data\olxmonitor.db
+**Current searches** (example):
+- DDR4 RAM (`/elektronika/komputery/podzespoly-i-czesci/q-ddr4-ram/`)
 
-Recent Updates:
-- Added WPF desktop viewer with clickable listing URLs
-- Added unit tests for scraper and database
+## Project Structure
 
-Future Improvements (planned):
-- Better title cleaning (remove "Odświeżono dnia...", dates, etc.)
-- Email / Discord notifications when new items appear
-- Docker + docker-compose setup
+| Project | Description |
+|---------|-------------|
+| `OlxMonitor.Core` | Shared models (`Listing`, `MonitorSettings`) |
+| `OlxMonitor.Infrastructure` | Database context, migrations, and OLX scraper (HtmlAgilityPack) |
+| `OlxMonitor.Worker` | Background service, console viewer, and CLI commands |
+| `OlxMonitor.Viewer` | WPF desktop GUI viewer with clickable links |
+| `tests/OlxMonitor.Tests` | Unit tests for scraper and database |
+
+## Database
+
+- **Location**: `src/OlxMonitor.Worker/Data/olxmonitor.db`
+- **Provider**: SQLite with Entity Framework Core migrations
+
+## Recent Updates
+
+- ✅ Added WPF desktop viewer with clickable listing URLs
+- ✅ Added unit tests for scraper and database operations
+
+## Planned Improvements
+
+- [ ] Improved title cleaning (remove "Odświeżono dnia...", dates, etc.)
+- [ ] Email / Discord notifications for new listings
+- [ ] Docker + docker-compose setup
+
+## License
+
+This project is open source and available under the [MIT License](LICENSE).

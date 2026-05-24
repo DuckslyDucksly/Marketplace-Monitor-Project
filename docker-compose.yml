@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  olx-monitor:
+    build:
+      context: .
+      dockerfile: src/OlxMonitor.Worker/Dockerfile
+    container_name: olx-monitor-worker
+    restart: unless-stopped
+    volumes:
+      - olx-data:/app/Data
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+    # Uncomment the line below if you want to mount a custom appsettings.json
+    # - ./src/OlxMonitor.Worker/appsettings.json:/app/appsettings.json:ro
+
+volumes:
+  olx-data:
+    driver: local
