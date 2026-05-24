@@ -8,15 +8,15 @@ COPY ["src/OlxMonitor.Viewer/OlxMonitor.Viewer.csproj", "src/OlxMonitor.Viewer/"
 COPY ["src/OlxMonitor.Core/OlxMonitor.Core.csproj", "src/OlxMonitor.Core/"]
 COPY ["src/OlxMonitor.Infrastructure/OlxMonitor.Infrastructure.csproj", "src/OlxMonitor.Infrastructure/"]
 
-# Restore dependencies
-RUN dotnet restore "src/OlxMonitor.Viewer/OlxMonitor.Viewer.csproj"
+# Restore dependencies (enable Windows targeting for cross-platform build)
+RUN dotnet restore "src/OlxMonitor.Viewer/OlxMonitor.Viewer.csproj" /p:EnableWindowsTargeting=true
 
 # Copy all source code
 COPY . .
 
 # Build and publish
 WORKDIR "/src/src/OlxMonitor.Viewer"
-RUN dotnet publish "OlxMonitor.Viewer.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "OlxMonitor.Viewer.csproj" -c Release -o /app/publish /p:UseAppHost=false /p:EnableWindowsTargeting=true
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final

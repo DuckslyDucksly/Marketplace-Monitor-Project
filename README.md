@@ -76,23 +76,22 @@ docker run -d `
   olx-monitor
 ```
 
-### Running the Viewer with Docker (shares database with Worker)
+### Running the Viewer with Docker
 
-To run the WPF Viewer in Docker while accessing the same database as the Worker:
-
-```powershell
-# Build a Viewer image (add a simple Dockerfile for the Viewer if needed)
-docker build -t olx-viewer -f src/OlxMonitor.Viewer/Dockerfile .
-
-# Run the viewer container sharing the same volume
-docker run --rm `
-  --name olx-viewer `
-  -v olx-data:/app/Data `
-  -e ASPNETCORE_ENVIRONMENT=Production `
-  olx-viewer
-```
-
-> **Note**: The Viewer and Worker must use the exact same path `/app/Data/olxmonitor.db`. Make sure both containers mount the `olx-data` volume at `/app/Data`.
+> ⚠️ **Not recommended / Not supported on Linux**
+>
+> `OlxMonitor.Viewer` is a **WPF** desktop application. It requires the Windows Desktop framework (`Microsoft.WindowsDesktop.App`), which is not available in Linux-based Docker containers.
+>
+> **Recommended approaches:**
+> - Run the **Worker** in Docker (fully supported)
+> - Run the **Viewer** natively on Windows:
+>   ```powershell
+>   dotnet run --project src/OlxMonitor.Viewer
+>   ```
+> - Use the **console viewer** inside the Worker container:
+>   ```powershell
+>   docker exec -it olx-monitor-worker dotnet run -- viewer
+>   ```
 
 ## Configuration
 
