@@ -43,6 +43,39 @@ dotnet run --project src/OlxMonitor.Viewer
 dotnet build Marketplace-Monitor.slnx
 ```
 
+## Docker Deployment
+
+The OLX Monitor Worker can be easily deployed using Docker.
+
+### Prerequisites
+- [Docker](https://www.docker.com/) and Docker Compose installed
+
+### Using Docker Compose (Recommended)
+```powershell
+# Build and start the container
+docker-compose up -d --build
+
+# View logs
+docker-compose logs -f olx-monitor
+
+# Stop the container
+docker-compose down
+```
+
+Data is persisted in a Docker volume named `olx-data`.
+
+### Using Docker (standalone)
+```powershell
+# Build the image
+docker build -t olx-monitor -f src/OlxMonitor.Worker/Dockerfile .
+
+# Run the container
+docker run -d `
+  --name olx-monitor `
+  -v olx-data:/app/Data `
+  olx-monitor
+```
+
 ## Configuration
 
 Searches are configured in `src/OlxMonitor.Worker/appsettings.json`:
@@ -87,7 +120,6 @@ Searches are configured in `src/OlxMonitor.Worker/appsettings.json`:
 
 - [ ] Improved title cleaning (remove "Odświeżono dnia...", dates, etc.)
 - [ ] Email / Discord notifications for new listings
-- [ ] Docker + docker-compose setup
 
 ## License
 
